@@ -1,3 +1,2 @@
 #!/bin/sh
-exec 2>&1
-exec /opt/victronenergy/dbus-generic-mqtt-pvinverter/start-generic-mqtt-pvinverter.sh TTY
+python3 /opt/victronenergy/dbus-generic-mqtt-pvinverter/dbus-generic-mqtt-pvinverter.py
