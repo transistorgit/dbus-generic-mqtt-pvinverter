@@ -4,7 +4,6 @@ set -x
 DRIVERNAME=dbus-generic-mqtt-pvinverter
 
 rm -rf /opt/victronenergy/service/$DRIVERNAME
-rm -rf /opt/victronenergy/service-templates/$DRIVERNAME
 rm -rf /opt/victronenergy/$DRIVERNAME
 
 pkill -f "python .*/$DRIVERNAME.py"
