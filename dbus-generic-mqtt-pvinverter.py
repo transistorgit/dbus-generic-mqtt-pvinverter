@@ -4,9 +4,6 @@
 Venus OS Dbus Service that subscribes to a MQTT broker to read current measurement data and publishes it as PV inverter data on dbus
 currently, only 1 phase rms current is read and multiplied by 230 to get an estimated active power value
 
-TODO:
-read also phase voltage from mqtt to calculate better power
-
 Possible extension:
 in onmessage() iterate over topics to also read the other phases, for 3-phase inverters
 '''
@@ -26,6 +23,7 @@ Topics = {
     'current':'iot/pv/voltwerk/ac_current_A',
     'voltage':'iot/pv/voltwerk/ac_voltage_V',
     'power':'iot/pv/voltwerk/ac_active_power_kW',
+    'status':'iot/pv/voltwerk/service',
     }
 
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",),)
@@ -38,6 +36,7 @@ class mqtt_inverter:
     self._dbusservice = []
     self.broker_address = broker_address
     self.is_connected = False
+    self.is_online = False
     self.topics = topics
     self.client = mqtt.Client('Venus_Generic_Mqtt_Inverter_Driver') 
     self.client.on_disconnect = self.on_disconnect
@@ -88,12 +87,16 @@ class mqtt_inverter:
   def on_message(self, client, userdata, msg):
     try:
 
+      self.is_online = True
       if msg.topic == self.topics['current']:
         self.registers['A phase Current'][1] = float(msg.payload)
       elif msg.topic ==  self.topics['voltage']:
         self.registers['A phase Voltage'][1] = float(msg.payload) 
       elif msg.topic == self.topics['power']:
         self.registers['Active Power'][1] = float(msg.payload)*1000
+      elif msg.topic == self.topics['status']:
+        self.is_online = True if msg.payload==b'online' else False
+        print(str(msg.payload.decode("utf-8")))
 
       #todo
       #self.registers['Energy Total'][1] = 0
@@ -146,21 +149,25 @@ class DbusGenenricMqttPvinverterService:
 
   def _update(self):
     try:
-      self._dbusservice['/Ac/Power']          = self.inverter.registers["Active Power"][1]
-      self._dbusservice['/Ac/Current']        = self.inverter.registers["A phase Current"][1]
-      self._dbusservice['/Ac/MaxPower']       = 5000
-      self._dbusservice['/Ac/Energy/Forward'] = self.inverter.registers["Energy Total"][1]
-      self._dbusservice['/Ac/L1/Voltage']     = self.inverter.registers["A phase Voltage"][1]
-      #self._dbusservice['/Ac/L2/Voltage']     = 0
-      #self._dbusservice['/Ac/L3/Voltage']     = 0
-      self._dbusservice['/Ac/L1/Current']     = self.inverter.registers["A phase Current"][1]
-      #self._dbusservice['/Ac/L2/Current']     = 0
-      #self._dbusservice['/Ac/L3/Current']     = 0
-      self._dbusservice['/Ac/L1/Power']       = self.inverter.registers["Active Power"][1]
-      #self._dbusservice['/Ac/L2/Power']       = 0
-      #self._dbusservice['/Ac/L3/Power']       = 0
-      self._dbusservice['/ErrorCode']         = 0 
-      self._dbusservice['/StatusCode']        = 7
+      if self.inverter.is_online==False or self.inverter.is_connected==False:
+        self._dbusservice['/Ac/Power']          = 0
+        self._dbusservice['/Ac/Current']        = 0
+        self._dbusservice['/Ac/MaxPower']       = 0
+        self._dbusservice['/Ac/Energy/Forward'] = 0
+        self._dbusservice['/Ac/L1/Voltage']     = 0
+        self._dbusservice['/Ac/L1/Current']     = 0
+        self._dbusservice['/Ac/L1/Power']       = 0
+        self._dbusservice['/StatusCode']        = 0
+      else:
+        self._dbusservice['/Ac/Power']          = self.inverter.registers["Active Power"][1]
+        self._dbusservice['/Ac/Current']        = self.inverter.registers["A phase Current"][1]
+        self._dbusservice['/Ac/MaxPower']       = 5000
+        self._dbusservice['/Ac/Energy/Forward'] = self.inverter.registers["Energy Total"][1]
+        self._dbusservice['/Ac/L1/Voltage']     = self.inverter.registers["A phase Voltage"][1]
+        self._dbusservice['/Ac/L1/Current']     = self.inverter.registers["A phase Current"][1]
+        self._dbusservice['/Ac/L1/Power']       = self.inverter.registers["Active Power"][1]
+        self._dbusservice['/ErrorCode']         = 0
+        self._dbusservice['/StatusCode']        = 7
     except Exception as e:
       logging.info("WARNING: Could not read from Solis S5 Inverter", exc_info=sys.exc_info()[0])
       self._dbusservice['/Ac/Power'] = 0  # TODO: any better idea to signal an issue?
