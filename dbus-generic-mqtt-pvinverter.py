@@ -150,14 +150,14 @@ class DbusGenenricMqttPvinverterService:
   def _update(self):
     try:
       if self.inverter.is_online==False or self.inverter.is_connected==False:
-        self._dbusservice['/Ac/Power']          = 0
-        self._dbusservice['/Ac/Current']        = 0
-        self._dbusservice['/Ac/MaxPower']       = 0
-        self._dbusservice['/Ac/Energy/Forward'] = 0
-        self._dbusservice['/Ac/L1/Voltage']     = 0
-        self._dbusservice['/Ac/L1/Current']     = 0
-        self._dbusservice['/Ac/L1/Power']       = 0
-        self._dbusservice['/StatusCode']        = 0
+        self._dbusservice['/Ac/Power']          = None
+        self._dbusservice['/Ac/Current']        = None
+        self._dbusservice['/Ac/MaxPower']       = None
+        self._dbusservice['/Ac/Energy/Forward'] = None
+        self._dbusservice['/Ac/L1/Voltage']     = None
+        self._dbusservice['/Ac/L1/Current']     = None
+        self._dbusservice['/Ac/L1/Power']       = None
+        self._dbusservice['/StatusCode']        = None
       else:
         self._dbusservice['/Ac/Power']          = self.inverter.registers["Active Power"][1]
         self._dbusservice['/Ac/Current']        = self.inverter.registers["A phase Current"][1]
