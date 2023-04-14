@@ -19,11 +19,13 @@ import os
 import _thread as thread
 import paho.mqtt.client as mqtt
 
+# insert your own values
 Broker_Address = '192.168.168.112'
-Mqtt_Prefix = 'iot/pv/voltwerk'
-Topics = { 
-    'current':'iot/pv/voltwerk/current_Arms'
-    # add voltage for better power calculation
+InverterType = 'voltwerk'
+Topics = {
+    'current':'iot/pv/voltwerk/ac_current_A',
+    'voltage':'iot/pv/voltwerk/ac_voltage_V',
+    'power':'iot/pv/voltwerk/ac_active_power_kW',
     }
 
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",),)
@@ -77,7 +79,7 @@ class mqtt_inverter:
       logging.info("Connected to MQTT Broker " + self.broker_address)
       self.is_connected = True
       for topic in self.topics.values():
-        print("subcribe to " + topic)
+        logging.info("subscribe to " + topic)
         client.subscribe(topic)
     else:
       logging.error("Failed to connect, return code %d\n", rc)
@@ -85,18 +87,16 @@ class mqtt_inverter:
 
   def on_message(self, client, userdata, msg):
     try:
+
       if msg.topic == self.topics['current']:
-        #print(str(msg.payload))
-        #for now calculate power with voltage=230 
-        self.registers['A phase Current'][1] = float(msg.payload) # our inverter sends just the number
-        self.registers['B phase Current'][1] = 0
-        self.registers['C phase Current'][1] = 0
-        self.registers['A phase Voltage'][1] = 230
-        self.registers['B phase Voltage'][1] = 230
-        self.registers['C phase Voltage'][1] = 230
-        self.registers['Active Power'][1] = 230 * float(msg.payload)
-        self.registers['Energy Today'][1] = 0
-        self.registers['Energy Total'][1] = 0
+        self.registers['A phase Current'][1] = float(msg.payload)
+      elif msg.topic ==  self.topics['voltage']:
+        self.registers['A phase Voltage'][1] = float(msg.payload) 
+      elif msg.topic == self.topics['power']:
+        self.registers['Active Power'][1] = float(msg.payload)*1000
+
+      #todo
+      #self.registers['Energy Total'][1] = 0
           
     except Exception as e:
       logging.warning("Message parsing error " + str(e))
@@ -128,14 +128,14 @@ class DbusGenenricMqttPvinverterService:
     self._dbusservice.add_path('/Ac/MaxPower', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}W".format(x), onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/Ac/Energy/Forward', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}kWh".format(x), onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/Ac/L1/Voltage', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}V".format(x), onchangecallback=self._handlechangedvalue)
-    self._dbusservice.add_path('/Ac/L2/Voltage', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}V".format(x), onchangecallback=self._handlechangedvalue)
-    self._dbusservice.add_path('/Ac/L3/Voltage', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}V".format(x), onchangecallback=self._handlechangedvalue)
+    #self._dbusservice.add_path('/Ac/L2/Voltage', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}V".format(x), onchangecallback=self._handlechangedvalue)
+    #self._dbusservice.add_path('/Ac/L3/Voltage', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}V".format(x), onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/Ac/L1/Current', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}A".format(x), onchangecallback=self._handlechangedvalue)
-    self._dbusservice.add_path('/Ac/L2/Current', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}A".format(x), onchangecallback=self._handlechangedvalue)
-    self._dbusservice.add_path('/Ac/L3/Current', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}A".format(x), onchangecallback=self._handlechangedvalue)
+    #self._dbusservice.add_path('/Ac/L2/Current', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}A".format(x), onchangecallback=self._handlechangedvalue)
+    #self._dbusservice.add_path('/Ac/L3/Current', None, writeable=True, gettextcallback=lambda a, x: "{:.1f}A".format(x), onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/Ac/L1/Power', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}W".format(x), onchangecallback=self._handlechangedvalue)
-    self._dbusservice.add_path('/Ac/L2/Power', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}W".format(x), onchangecallback=self._handlechangedvalue)
-    self._dbusservice.add_path('/Ac/L3/Power', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}W".format(x), onchangecallback=self._handlechangedvalue)
+    #self._dbusservice.add_path('/Ac/L2/Power', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}W".format(x), onchangecallback=self._handlechangedvalue)
+    #self._dbusservice.add_path('/Ac/L3/Power', None, writeable=True, gettextcallback=lambda a, x: "{:.0f}W".format(x), onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/ErrorCode', 0, writeable=True, onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/StatusCode', 0, writeable=True, onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/Position', 0, writeable=True, onchangecallback=self._handlechangedvalue)
@@ -147,18 +147,18 @@ class DbusGenenricMqttPvinverterService:
   def _update(self):
     try:
       self._dbusservice['/Ac/Power']          = self.inverter.registers["Active Power"][1]
-      self._dbusservice['/Ac/Current']        = self.inverter.registers["A phase Current"][1]+self.inverter.registers["B phase Current"][1]+self.inverter.registers["C phase Current"][1]
+      self._dbusservice['/Ac/Current']        = self.inverter.registers["A phase Current"][1]
       self._dbusservice['/Ac/MaxPower']       = 5000
       self._dbusservice['/Ac/Energy/Forward'] = self.inverter.registers["Energy Total"][1]
       self._dbusservice['/Ac/L1/Voltage']     = self.inverter.registers["A phase Voltage"][1]
-      self._dbusservice['/Ac/L2/Voltage']     = self.inverter.registers["B phase Voltage"][1]
-      self._dbusservice['/Ac/L3/Voltage']     = self.inverter.registers["C phase Voltage"][1]
+      #self._dbusservice['/Ac/L2/Voltage']     = 0
+      #self._dbusservice['/Ac/L3/Voltage']     = 0
       self._dbusservice['/Ac/L1/Current']     = self.inverter.registers["A phase Current"][1]
-      self._dbusservice['/Ac/L2/Current']     = self.inverter.registers["B phase Current"][1]
-      self._dbusservice['/Ac/L3/Current']     = self.inverter.registers["C phase Current"][1]
-      self._dbusservice['/Ac/L1/Power']       = self.inverter.registers["A phase Current"][1]*self.inverter.registers["A phase Voltage"][1]
-      self._dbusservice['/Ac/L2/Power']       = self.inverter.registers["B phase Current"][1]*self.inverter.registers["B phase Voltage"][1]
-      self._dbusservice['/Ac/L3/Power']       = self.inverter.registers["C phase Current"][1]*self.inverter.registers["C phase Voltage"][1]
+      #self._dbusservice['/Ac/L2/Current']     = 0
+      #self._dbusservice['/Ac/L3/Current']     = 0
+      self._dbusservice['/Ac/L1/Power']       = self.inverter.registers["Active Power"][1]
+      #self._dbusservice['/Ac/L2/Power']       = 0
+      #self._dbusservice['/Ac/L3/Power']       = 0
       self._dbusservice['/ErrorCode']         = 0 
       self._dbusservice['/StatusCode']        = 7
     except Exception as e:
@@ -193,7 +193,7 @@ def main():
 
       pvac_output = DbusGenenricMqttPvinverterService(
         topics = Topics,
-        servicename = 'com.victronenergy.pvinverter.mqtt_' + Mqtt_Prefix.split('/')[-1],
+        servicename = 'com.victronenergy.pvinverter.mqtt_' + InverterType,
         deviceinstance = 290,
         broker_address= Broker_Address,
       )

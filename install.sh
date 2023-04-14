@@ -14,7 +14,7 @@ cp -f /data/etc/$DRIVERNAME/* /opt/victronenergy/$DRIVERNAME &>/dev/null
 cp -rf /data/etc/$DRIVERNAME/service /opt/victronenergy/service/$DRIVERNAME
 
 #restart if running
-pkill -f "python .*/$DRIVERNAME.py"
+pkill -f "python3 .*/$DRIVERNAME.py"
 
 # add install-script to rc.local to be ready for firmware update
 filename=/data/rc.local
