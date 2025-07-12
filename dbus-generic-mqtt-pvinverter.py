@@ -38,7 +38,7 @@ class mqtt_inverter:
     self.is_connected = False
     self.is_online = False
     self.topics = topics
-    self.client = mqtt.Client('Venus_Generic_Mqtt_Inverter_Driver') 
+    self.client = mqtt.Client(client_id='Venus_Generic_Mqtt_Inverter_Driver', callback_api_version=mqtt.CallbackAPIVersion.VERSION2) 
     self.client.on_disconnect = self.on_disconnect
     self.client.on_connect = self.on_connect
     self.client.on_message = self.on_message
@@ -73,7 +73,7 @@ class mqtt_inverter:
       self.is_connected = False
 
 
-  def on_connect(self, client, userdata, flags, rc):
+  def on_connect(self, client, userdata, flags, rc, properties):
     if rc == 0:
       logging.info("Connected to MQTT Broker " + self.broker_address)
       self.is_connected = True
@@ -106,9 +106,9 @@ class mqtt_inverter:
       print(e)
 
 
-class DbusGenenricMqttPvinverterService:
+class DbusGenericMqttPvinverterService:
   def __init__(self, topics, servicename, deviceinstance=290, productname='Generic MQTT PV Inverter', broker_address='127.0.0.1'):
-    self._dbusservice = VeDbusService(servicename)
+    self._dbusservice = VeDbusService(servicename, register=False)
 
     logging.debug("%s /DeviceInstance = %d" % (servicename, deviceinstance))
     self.inverter = mqtt_inverter(topics, broker_address)
@@ -143,6 +143,7 @@ class DbusGenenricMqttPvinverterService:
     self._dbusservice.add_path('/StatusCode', 0, writeable=True, onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path('/Position', 0, writeable=True, onchangecallback=self._handlechangedvalue)
     self._dbusservice.add_path(path_UpdateIndex, 0, writeable=True, onchangecallback=self._handlechangedvalue)
+    self._dbusservice.register()
 
     gobject.timeout_add(1000, self._update) # pause x ms before the next request
 
@@ -198,7 +199,7 @@ def main():
       # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
       DBusGMainLoop(set_as_default=True)
 
-      pvac_output = DbusGenenricMqttPvinverterService(
+      pvac_output = DbusGenericMqttPvinverterService(
         topics = Topics,
         servicename = 'com.victronenergy.pvinverter.mqtt_' + InverterType,
         deviceinstance = 290,
