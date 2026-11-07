@@ -38,14 +38,6 @@ class mqtt_inverter:
     self.is_connected = False
     self.is_online = False
     self.topics = topics
-    self.client = mqtt.Client(client_id='Venus_Generic_Mqtt_Inverter_Driver', callback_api_version=mqtt.CallbackAPIVersion.VERSION2) 
-    self.client.on_disconnect = self.on_disconnect
-    self.client.on_connect = self.on_connect
-    self.client.on_message = self.on_message
-    self.client.connect(broker_address)  # connect to broker
-
-    self.client.loop_start()
-
     self.registers = {
       # name        : nr , format, factor, unit
       "Active Power": ['W', 0],
@@ -59,18 +51,30 @@ class mqtt_inverter:
       "C phase Current": ['A', 0],
     }
 
+    # hostname in the client id: a second client with the same id (e.g. a test run on a PC) would kick this one off the broker
+    self.client = mqtt.Client(client_id='Venus_Generic_Mqtt_Inverter_Driver_' + platform.node(), callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+    # an exception in a callback must not kill the network thread (the last value would freeze on dbus)
+    self.client.suppress_exceptions = True
+    self.client.reconnect_delay_set(min_delay=1, max_delay=60)
+    self.client.on_disconnect = self.on_disconnect
+    self.client.on_connect = self.on_connect
+    self.client.on_message = self.on_message
+    # connect_async + loop_start: the paho thread connects and reconnects automatically,
+    # also if the broker is not reachable at startup
+    self.client.connect_async(broker_address)
+    self.client.loop_start()
+    self.thread = self.client._thread  # for the watchdog in _update()
 
-  def on_disconnect(self, client, userdata, rc):
-    print("mqtt disconnected")
-    if rc != 0:
-      print('Unexpected MQTT disconnect. Will auto-reconnect')
-    try:
-      client.connect(self.broker_address)
-      self.is_connected = True
-    except Exception as e:
-      logging.error("Failed to Reconnect to " + self.broker_address + " " + str(e))
-      print("Failed to Reconnect to " + self.broker_address + " " + str(e))
-      self.is_connected = False
+
+  # paho-mqtt 2.x, CallbackAPIVersion.VERSION2: 5 arguments. No connect() here,
+  # loop_start() takes care of reconnecting.
+  def on_disconnect(self, client, userdata, flags, reason_code, properties):
+    logging.warning("MQTT disconnected (%s), paho will reconnect automatically", reason_code)
+    self.is_connected = False
+    # drop old values: the inverter publishes nothing at night, otherwise the last
+    # daytime value would stay after reconnecting
+    self.registers['Active Power'][1] = 0
+    self.registers['A phase Current'][1] = 0
 
 
   def on_connect(self, client, userdata, flags, rc, properties):
@@ -81,7 +85,7 @@ class mqtt_inverter:
         logging.info("subscribe to " + topic)
         client.subscribe(topic)
     else:
-      logging.error("Failed to connect, return code %d\n", rc)
+      logging.error("Failed to connect, reason code %s", rc)
 
 
   def on_message(self, client, userdata, msg):
@@ -111,7 +115,6 @@ class DbusGenericMqttPvinverterService:
     self._dbusservice = VeDbusService(servicename, register=False)
 
     logging.debug("%s /DeviceInstance = %d" % (servicename, deviceinstance))
-    self.inverter = mqtt_inverter(topics, broker_address)
 
     # Create the management objects, as specified in the ccgx dbus-api document
     self._dbusservice.add_path('/Mgmt/ProcessName', __file__)
@@ -145,10 +148,18 @@ class DbusGenericMqttPvinverterService:
     self._dbusservice.add_path(path_UpdateIndex, 0, writeable=True, onchangecallback=self._handlechangedvalue)
     self._dbusservice.register()
 
+    # connect MQTT only after the dbus registration succeeded: a second instance then fails with
+    # NameExistsException before it logs in to the broker with the same client id
+    self.inverter = mqtt_inverter(topics, broker_address)
+
     gobject.timeout_add(1000, self._update) # pause x ms before the next request
 
 
   def _update(self):
+    if not self.inverter.thread.is_alive():
+      # safety net: without the paho thread no values arrive and the last one would freeze
+      logging.critical("MQTT thread died, exiting so that supervise restarts the driver")
+      os._exit(1)
     try:
       if self.inverter.is_online==False or self.inverter.is_connected==False:
         self._dbusservice['/Ac/Power']          = None
